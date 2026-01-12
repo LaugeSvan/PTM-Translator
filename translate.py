@@ -1,4 +1,6 @@
 import sys
+import re
+import os
 
 missing_deps = []
 
@@ -44,23 +46,32 @@ output_file = "done.txt"
 quote_pattern = re.compile(r'"(.*?)"')
 id_pattern = re.compile(r'add\(\s*([^,]+)\s*,')
 
+# Check if input file exists
+if not os.path.exists(input_file):
+    print(f"ERROR: {input_file} not found.")
+    sys.exit(1)
+
 with open(input_file, "r", encoding="utf-8") as f:
     lines = f.readlines()
 
+# Resuming logic: Find the last ID processed in done.txt
 last_done_id = None
 if os.path.exists(output_file):
     with open(output_file, "r", encoding="utf-8") as df:
-        for l in reversed(df.readlines()):
+        output_content = df.readlines()
+        for l in reversed(output_content):
             m = id_pattern.search(l)
             if m:
                 last_done_id = m.group(1).strip()
                 break
 
+# Map IDs from the input file
 ids = []
 for l in lines:
     m = id_pattern.search(l)
     ids.append(m.group(1).strip() if m else None)
 
+# Calculate where to start
 if last_done_id is None:
     start_idx = 0
 else:
@@ -70,42 +81,48 @@ else:
     )
     start_idx = found + 1 if found is not None else 0
 
-new_lines = [l.rstrip("\n") for l in lines[:start_idx]]
-
 if start_idx >= len(lines):
     print("Nothing to do. All lines are already processed.")
+    sys.exit(0)
 else:
-    print(f"Resuming at line {start_idx + 1}/{len(lines)} (last processed: {last_done_id})")
+    print(f"Resuming at line {start_idx + 1}/{len(lines)} (last ID: {last_done_id})")
 
+# Main Loop
 for idx in range(start_idx, len(lines)):
     line = lines[idx].rstrip("\n")
     match = quote_pattern.search(line)
 
+    # If the line doesn't match the expected "add(ID, "text")" format,
+    # just save it as is and move on.
     if not match:
-        new_lines.append(line)
+        with open(output_file, "a", encoding="utf-8") as out_f:
+            out_f.write(line + "\n")
         continue
 
     old_text = match.group(1)
 
     clear_screen()
-    print(line)
-    print(f'Current text: "{old_text}"')
+    print(f"Line {idx + 1} of {len(lines)}")
+    print("-" * 20)
+    print(f"Code: {line}")
+    print(f'Current Text: "{old_text}"')
+    print("-" * 20)
 
-    new_text = input("New text (empty = unchanged): ")
+    new_text = input("New text (Enter to keep unchanged, or type new text): ")
 
+    # Determine final version of the line
     if new_text.strip() == "":
-        new_lines.append(line)
+        updated_line = line
+        status = "Kept original"
     else:
+        # Replaces only the first occurrence of the quoted text
         updated_line = line.replace(f'"{old_text}"', f'"{new_text}"', 1)
-        new_lines.append(updated_line)
+        status = "Updated"
 
-        with open(output_file, "a", encoding="utf-8") as out_f:
-            out_f.write(updated_line + "\n")
+    # IMMEDIATELY append to the output file
+    with open(output_file, "a", encoding="utf-8") as out_f:
+        out_f.write(updated_line + "\n")
 
-        print(f'Appended to {output_file}')
+    print(f"Result: {status}. Progress saved.")
 
-with open(output_file, "w", encoding="utf-8") as f:
-    for line in new_lines:
-        f.write(line + "\n")
-
-print(f"\nDone. Updated lines saved to {output_file}.")
+print(f"\nFinished! All processed lines are in {output_file}.")
