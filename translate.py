@@ -1,9 +1,42 @@
-import re
-import os
-import readline
+import sys
+
+missing_deps = []
+
+try:
+    import re
+except ImportError:
+    missing_deps.append("re (standard library, something is seriously wrong)")
+
+try:
+    import os
+except ImportError:
+    missing_deps.append("os (standard library, something is seriously wrong)")
+
+# readline is optional on Windows
+try:
+    import readline
+except ImportError:
+    if sys.platform.startswith("win"):
+        print(
+            "WARNING: 'readline' is not available on Windows by default.\n"
+            "Input history and arrow-key navigation will not work.\n"
+            "To fix this, run:\n"
+            "  pip install pyreadline3\n"
+        )
+    else:
+        missing_deps.append("readline")
+
+if missing_deps:
+    print("ERROR: Missing required dependencies:")
+    for dep in missing_deps:
+        print(f" - {dep}")
+    print("\nFix the issues above and rerun the script.")
+    sys.exit(1)
+
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
+
 
 input_file = "missing_translations.txt"
 output_file = "done.txt"
@@ -31,15 +64,18 @@ for l in lines:
 if last_done_id is None:
     start_idx = 0
 else:
-    found = next((i for i in range(len(ids) - 1, -1, -1) if ids[i] == last_done_id), None)
+    found = next(
+        (i for i in range(len(ids) - 1, -1, -1) if ids[i] == last_done_id),
+        None
+    )
     start_idx = found + 1 if found is not None else 0
 
 new_lines = [l.rstrip("\n") for l in lines[:start_idx]]
 
 if start_idx >= len(lines):
-    print("Nothing to do — all lines already processed.")
+    print("Nothing to do. All lines are already processed.")
 else:
-    print(f"Resuming at line {start_idx+1}/{len(lines)} (last processed: {last_done_id})")
+    print(f"Resuming at line {start_idx + 1}/{len(lines)} (last processed: {last_done_id})")
 
 for idx in range(start_idx, len(lines)):
     line = lines[idx].rstrip("\n")
@@ -55,7 +91,7 @@ for idx in range(start_idx, len(lines)):
     print(line)
     print(f'Current text: "{old_text}"')
 
-    new_text = input("New text (empty=unchanged): ")
+    new_text = input("New text (empty = unchanged): ")
 
     if new_text.strip() == "":
         new_lines.append(line)
@@ -65,10 +101,11 @@ for idx in range(start_idx, len(lines)):
 
         with open(output_file, "a", encoding="utf-8") as out_f:
             out_f.write(updated_line + "\n")
+
         print(f'Appended to {output_file}')
 
 with open(output_file, "w", encoding="utf-8") as f:
     for line in new_lines:
         f.write(line + "\n")
 
-print(f"\nDone. Updated lines saved to {output_file}. Good job!")
+print(f"\nDone. Updated lines saved to {output_file}.")
