@@ -11,149 +11,166 @@ else:
     import termios
 
 # --- Config ---
-input_file = "missing_translations.txt"
-output_file = "done.txt"
+INPUT_FILE = "missing_translations.txt"
+OUTPUT_FILE = "done.txt"
 
-quote_pattern = re.compile(r'"(.*?)"')
-id_pattern = re.compile(r'add\(\s*([^,]+)\s*,')
-
-if not os.path.exists(input_file):
-    print(f"ERROR: {input_file} not found.")
-    sys.exit(1)
-
-with open(input_file, "r", encoding="utf-8") as f:
-    lines = f.readlines()
-
+QUOTE_PATTERN = re.compile(r'"(.*?)"')
+ID_PATTERN = re.compile(r'add\(\s*([^,]+)\s*,')
 
 def clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
 
+def get_last_processed_id():
+    """Finds the last ID recorded in the output file to resume progress."""
+    if not os.path.exists(OUTPUT_FILE):
+        return None
+    
+    with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+        for line in reversed(lines):
+            match = ID_PATTERN.search(line)
+            if match:
+                return match.group(1).strip()
+    return None
 
-# --- Resume Logic ---
-last_done_id = None
-if os.path.exists(output_file):
-    with open(output_file, "r", encoding="utf-8") as df:
-        output_content = df.readlines()
-        for l in reversed(output_content):
-            m = id_pattern.search(l)
-            if m:
-                last_done_id = m.group(1).strip()
-                break
-
-ids = []
-for l in lines:
-    m = id_pattern.search(l)
-    ids.append(m.group(1).strip() if m else None)
-
-if last_done_id is None:
-    start_idx = 0
-else:
-    found = next(
-        (i for i in range(len(ids) - 1, -1, -1) if ids[i] == last_done_id),
-        None,
-    )
-    start_idx = found + 1 if found is not None else 0
-
-if start_idx >= len(lines):
-    print("Nothing to do. All lines are already processed.")
-    sys.exit(0)
-
-
-# --- Cross-platform single key read ---
 def read_key():
+    """Cross-platform single key read."""
     if os.name == "nt":
         ch = msvcrt.getwch()
-        if ch == "\x00" or ch == "\xe0":  # special keys
-            ch2 = msvcrt.getwch()
-            return f"special_{ch2}"
+        if ch in ("\x00", "\xe0"):  # Special keys
+            return f"special_{msvcrt.getwch()}"
         return ch
     else:
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
-            tty.setraw(sys.stdin.fileno())
+            tty.setraw(fd)
             ch = sys.stdin.read(1)
-            if ch == "\x1b":  # possible arrow key
+            if ch == "\x1b":  # Possible arrow key
                 seq = sys.stdin.read(2)
                 return f"special_{seq}"
             return ch
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-
-# --- Main Loop ---
-for idx in range(start_idx, len(lines)):
-    line = lines[idx].rstrip("\n")
-    match = quote_pattern.search(line)
-
-    if not match:
-        with open(output_file, "a", encoding="utf-8") as out_f:
-            out_f.write(line + "\n")
-        continue
-
-    old_text = match.group(1)
+def get_user_input(current_line, old_text, current_idx, total_count):
+    """Handles the interactive CLI for entering new text."""
     clear_screen()
-    print(f"Line {idx + 1} of {len(lines)} | Last ID: {last_done_id}")
-    print("-" * 30)
-    print(f"Code: {line}")
-    print(f"Current Text: \"{old_text}\"")
-    print("-" * 30)
-    print(" [ENTER]       -> Save (Appends to file)")
-    print(" [TAB]         -> Skip immediately")
-    print(" [CTRL+C]      -> Exit script")
-    print("-" * 30)
+    
+    # Logic to isolate only the "code shell" and remove trailing comma/space
+    match = QUOTE_PATTERN.search(current_line)
+    if match:
+        start_idx = match.start()
+        end_idx = match.end()
+        # Take the prefix, remove the trailing comma and space, then add the suffix
+        prefix = current_line[:start_idx].rstrip(", ")
+        suffix = current_line[end_idx:].strip()
+        code_preview = f"{prefix}{suffix}"
+    else:
+        code_preview = current_line.strip()
+
+    print("-" * 60)
+    print(f" PROGRESS: Line {current_idx + 1} / {total_count}")
+    print("-" * 60)
+    print(f" {code_preview}")
+    print(f" \"{old_text}\"")
+    print("-" * 60)
+    print(" [ENTER] -> Confirm/Original | [TAB] -> Skip | [CTRL+C] -> Exit")
+    print("-" * 60)
+    sys.stdout.write(" ")
+    sys.stdout.flush()
 
     new_text = ""
-    print("New text: ", end="", flush=True)
-
     while True:
         key = read_key()
 
-        # TAB: skip immediately
-        if key == "\t":
-            new_text = None
-            print("\n\n[ACTION] Skipped. Nothing appended.")
-            break
-
-        # ENTER: confirm
-        elif key in ("\r", "\n"):
+        if key == "\t":  # Tab to skip
+            print("\n[SKIPPED]")
+            return None
+        elif key in ("\r", "\n"):  # Enter to confirm
             print()
-            break
-
-        # CTRL+C: exit
-        elif key == "\x03":
-            print("\n\nExiting script...")
-            sys.exit(0)
-
-        # BACKSPACE
-        elif key in ("\x08", "\x7f"):
+            return new_text
+        elif key == "\x03":  # Ctrl+C
+            raise KeyboardInterrupt
+        elif key in ("\x08", "\x7f"):  # Backspace
             if new_text:
                 new_text = new_text[:-1]
                 sys.stdout.write("\b \b")
                 sys.stdout.flush()
-
-        # arrow keys or special keys: ignored (no editing yet)
         elif key.startswith("special_"):
             continue
-
-        # normal characters
         elif len(key) == 1 and ord(key) >= 32:
             new_text += key
             sys.stdout.write(key)
             sys.stdout.flush()
 
-    # --- Save result ---
-    if new_text is not None:
-        if new_text.strip() == "":
-            updated_line = line
-            status = "Original kept and appended"
-        else:
-            updated_line = line.replace(f'"{old_text}"', f'"{new_text}"', 1)
-            status = f'Updated to "{new_text}" and appended'
+def main():
+    if not os.path.exists(INPUT_FILE):
+        print(f"ERROR: {INPUT_FILE} not found.")
+        sys.exit(1)
 
-        with open(output_file, "a", encoding="utf-8") as out_f:
-            out_f.write(updated_line + "\n")
+    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+        all_lines = f.readlines()
 
-    time.sleep(0.3)
+    total_lines = len(all_lines)
+    last_id = get_last_processed_id()
+    start_idx = 0
+    if last_id:
+        for idx, line in enumerate(all_lines):
+            match = ID_PATTERN.search(line)
+            if match and match.group(1).strip() == last_id:
+                start_idx = idx + 1
+                break
 
-print(f"\nFinished! All lines processed are in {output_file}.")
+    if start_idx >= total_lines:
+        print("All lines already processed.")
+        return
+
+    # Load auto-fill map
+    auto_fill_map = {}
+    if os.path.exists(OUTPUT_FILE):
+        with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                match = QUOTE_PATTERN.search(line)
+                if match:
+                    txt = match.group(1)
+                    auto_fill_map[txt] = txt
+
+    try:
+        with open(OUTPUT_FILE, "a", encoding="utf-8") as out_f:
+            for i in range(start_idx, total_lines):
+                line = all_lines[i].rstrip("\n")
+                match = QUOTE_PATTERN.search(line)
+
+                if not match:
+                    out_f.write(line + "\n")
+                    continue
+
+                old_text = match.group(1)
+
+                if old_text in auto_fill_map:
+                    updated = line.replace(f'"{old_text}"', f'"{auto_fill_map[old_text]}"', 1)
+                    out_f.write(updated + "\n")
+                    continue
+
+                new_text = get_user_input(line, old_text, i, total_lines)
+                
+                if new_text is not None:
+                    if new_text.strip() == "":
+                        final_line = line
+                    else:
+                        final_line = line.replace(f'"{old_text}"', f'"{new_text}"', 1)
+                        auto_fill_map[old_text] = new_text
+                    
+                    out_f.write(final_line + "\n")
+                    out_f.flush() 
+                
+                time.sleep(0.05)
+
+    except KeyboardInterrupt:
+        print("\n\nProgress saved. Exiting...")
+    finally:
+        print(f"\nFinished! Results are in {OUTPUT_FILE}")
+
+if __name__ == "__main__":
+    main()
