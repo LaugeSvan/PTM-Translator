@@ -14,7 +14,7 @@ else:
 INPUT_FILE = "missing_translations.txt"
 OUTPUT_FILE = "done.txt"
 
-QUOTE_PATTERN = re.compile(r'"(.*?)"')
+QUOTE_PATTERN = re.compile(r'"((?:\\.|[^"\\])*)"')
 ID_PATTERN = re.compile(r'add\(\s*([^,]+)\s*,')
 
 def clear_screen():
@@ -137,37 +137,46 @@ def main():
                     auto_fill_map[txt] = txt
 
     try:
-        with open(OUTPUT_FILE, "a", encoding="utf-8") as out_f:
-            for i in range(start_idx, total_lines):
-                line = all_lines[i].rstrip("\n")
-                match = QUOTE_PATTERN.search(line)
+        out_f = open(OUTPUT_FILE, "a", encoding="utf-8")
+        for i in range(start_idx, total_lines):
+            line = all_lines[i].rstrip("\n")
+            match = QUOTE_PATTERN.search(line)
 
-                if not match:
-                    out_f.write(line + "\n")
-                    continue
+            if not match:
+                out_f.write(line + "\n")
+                out_f.flush()
+                continue
 
-                old_text = match.group(1)
+            old_text = match.group(1)
 
-                if old_text in auto_fill_map:
-                    updated = line.replace(f'"{old_text}"', f'"{auto_fill_map[old_text]}"', 1)
-                    out_f.write(updated + "\n")
-                    continue
+            if old_text in auto_fill_map:
+                updated = line.replace(f'"{old_text}"', f'"{auto_fill_map[old_text]}"', 1)
+                out_f.write(updated + "\n")
+                out_f.flush()
+                continue
 
-                new_text = get_user_input(line, old_text, i, total_lines)
+            new_text = get_user_input(line, old_text, i, total_lines)
+            
+            if new_text is not None:
+                if new_text.strip() == "":
+                    final_line = line
+                else:
+                    final_line = line.replace(f'"{old_text}"', f'"{new_text}"', 1)
+                    auto_fill_map[old_text] = new_text
                 
-                if new_text is not None:
-                    if new_text.strip() == "":
-                        final_line = line
-                    else:
-                        final_line = line.replace(f'"{old_text}"', f'"{new_text}"', 1)
-                        auto_fill_map[old_text] = new_text
-                    
-                    out_f.write(final_line + "\n")
-                    out_f.flush() 
-                
-                time.sleep(0.05)
+                out_f.write(final_line + "\n")
+                out_f.flush()
+            else:
+                # Line was skipped, write original line
+                out_f.write(line + "\n")
+                out_f.flush()
+            
+            time.sleep(0.05)
+        
+        out_f.close()
 
     except KeyboardInterrupt:
+        out_f.close()
         print("\n\nProgress saved. Exiting...")
     finally:
         print(f"\nFinished! Results are in {OUTPUT_FILE}")
