@@ -70,7 +70,7 @@ def get_user_input(current_line, old_text, current_idx, total_count):
         code_preview = current_line.strip()
 
     print("-" * 60)
-    print(f" PROGRESS: Line {current_idx + 1} / {total_count}")
+    print(f" PROGRESS: Line {current_idx + 1} / {total_count} - {total_count - current_idx + 1}")
     print("-" * 60)
     print(f" {code_preview}")
     print(f" \"{old_text}\"")
