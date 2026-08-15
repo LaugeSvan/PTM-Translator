@@ -3,8 +3,8 @@ import os
 import sys
 
 # ---------------- CONFIG ----------------
-UNTRANSLATED_FILE = "translations.txt"
-TRANSLATED_FILE = "posttranslation.txt"
+UNTRANSLATED_FILE = "english.txt"
+TRANSLATED_FILE = "translations.txt"
 OUTPUT_FILE = "compared_output.txt"
 # ----------------------------------------
 
